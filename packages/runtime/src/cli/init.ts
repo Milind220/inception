@@ -45,7 +45,7 @@ export function runInit(opts: InitOptions = {}): number {
   console.log(`${BOLD}providers${RESET}`);
   for (const line of providerTable(providers)) console.log(line);
   if (!providers.some(p => p.detected)) {
-    console.log(`  ${DIM}none detected — .flue/app.ts has commented examples to wire one by hand${RESET}`);
+    console.log(`  ${DIM}none detected — src/app.ts has commented examples to wire one by hand${RESET}`);
   }
   console.log('');
   console.log(`${BOLD}files${RESET}`);
@@ -54,9 +54,9 @@ export function runInit(opts: InitOptions = {}): number {
   console.log('');
   console.log(`${BOLD}next steps${RESET}`);
   console.log(`  1. cd ${dir}`);
-  console.log('  2. npm install @flue/sdk valibot inception-workflows');
+  console.log('  2. npm install @flue/runtime@^0.11 valibot inception-workflows && npm install -D @flue/cli@^0.11');
   console.log(`  3. npx flue dev ${DIM}— or run once:${RESET}`);
-  console.log(`     npx flue run example --target node --id run-1 --payload '{"runDir":"/tmp/example-1","budgetUsd":1}'`);
+  console.log(`     npx flue run example --target node --payload '{"runDir":"/tmp/example-1","budgetUsd":1}'`);
   console.log('  4. inception watch /tmp/example-1');
   return 0;
 }

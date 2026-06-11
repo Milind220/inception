@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { codexAuthUsable, detectProviders, isOnPath, type DetectedProvider, type Probes } from '../src/cli/detect.js';
-import { pickDefaultModel, renderAppTs, renderExampleAgent, scaffold } from '../src/cli/scaffold.js';
+import { pickDefaultModel, renderAppTs, renderExampleWorkflow, scaffold } from '../src/cli/scaffold.js';
 import { nodeSatisfies } from '../src/cli/init.js';
 
 const probes = (over: Partial<Probes> = {}): Probes => ({
@@ -118,14 +118,14 @@ describe('scaffold', () => {
 
   const detect = (over: Partial<Probes> = {}) => detectProviders(probes(over));
 
-  it('writes .flue/app.ts and .flue/agents/example.ts', () => {
+  it('writes src/app.ts and src/workflows/example.ts', () => {
     dir = mkdtempSync(join(tmpdir(), 'inception-cli-'));
     const res = scaffold(dir, detect({ env: { ANTHROPIC_API_KEY: 'x' } }));
-    expect(res.written.sort()).toEqual([join('.flue', 'agents', 'example.ts'), join('.flue', 'app.ts')]);
+    expect(res.written.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
     expect(res.skipped).toEqual([]);
-    expect(existsSync(join(dir, '.flue', 'app.ts'))).toBe(true);
+    expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
 
-    const example = readFileSync(join(dir, '.flue', 'agents', 'example.ts'), 'utf8');
+    const example = readFileSync(join(dir, 'src', 'workflows', 'example.ts'), 'utf8');
     expect(example).toContain(`import { runWorkflow } from 'inception-workflows'`);
     expect(example).toContain(`import * as v from 'valibot'`);
     expect(example).toContain('budgetUsd: payload.budgetUsd');
@@ -138,16 +138,16 @@ describe('scaffold', () => {
     const providers = detect();
     scaffold(dir, providers);
 
-    const appPath = join(dir, '.flue', 'app.ts');
+    const appPath = join(dir, 'src', 'app.ts');
     writeFileSync(appPath, '// hand-edited\n');
 
     const second = scaffold(dir, providers);
     expect(second.written).toEqual([]);
-    expect(second.skipped.sort()).toEqual([join('.flue', 'agents', 'example.ts'), join('.flue', 'app.ts')]);
+    expect(second.skipped.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
     expect(readFileSync(appPath, 'utf8')).toBe('// hand-edited\n');
 
     const forced = scaffold(dir, providers, true);
-    expect(forced.written.sort()).toEqual([join('.flue', 'agents', 'example.ts'), join('.flue', 'app.ts')]);
+    expect(forced.written.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
     expect(forced.skipped).toEqual([]);
     expect(readFileSync(appPath, 'utf8')).not.toBe('// hand-edited\n');
   });
@@ -184,7 +184,7 @@ describe('scaffold', () => {
 
   it('app.ts with nothing detected still exports flue() with commented examples', () => {
     const app = renderAppTs(detect());
-    expect(app).toContain(`import { flue } from '@flue/sdk/app';`);
+    expect(app).toContain(`import { flue } from '@flue/runtime/routing';`);
     expect(app).not.toContain('\nconfigureProvider');
     expect(app).not.toContain('\nregisterProvider');
     expect(app).toContain('// inception init detected no provider credentials');
@@ -204,7 +204,7 @@ describe('default model selection', () => {
   });
 
   it('the example agent uses the picked model', () => {
-    expect(renderExampleAgent('openai-codex/gpt-5.3-codex-spark')).toContain("model: 'openai-codex/gpt-5.3-codex-spark'");
+    expect(renderExampleWorkflow('openai-codex/gpt-5.3-codex-spark')).toContain("model: 'openai-codex/gpt-5.3-codex-spark'");
   });
 });
 

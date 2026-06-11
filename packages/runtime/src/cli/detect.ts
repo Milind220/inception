@@ -41,7 +41,7 @@ export const CODEX_BRIDGE_ON_PATH = 'codex-bridge on PATH';
 function codexDetail(bridge: boolean, authFile: boolean): string {
   if (bridge && authFile) return `${CODEX_BRIDGE_ON_PATH}; ~/.codex/auth.json present`;
   if (bridge) return CODEX_BRIDGE_ON_PATH;
-  if (authFile) return '~/.codex/auth.json present, but codex-bridge is not on PATH — install it or wire your own token fetch in .flue/app.ts';
+  if (authFile) return '~/.codex/auth.json present, but codex-bridge is not on PATH — install it or wire your own token fetch in src/app.ts';
   return 'codex-bridge not on PATH and no usable ~/.codex/auth.json';
 }
 

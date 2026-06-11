@@ -2,7 +2,7 @@
 /**
  * inception — workflow CLI.
  *
- *   inception init [dir] [--force]        scaffold a .flue project with detected providers
+ *   inception init [dir] [--force]        scaffold a Flue project (src/ layout) with detected providers
  *   inception watch <runDir> [--replay]   tail a run's events.ndjson
  */
 const USAGE = `usage:

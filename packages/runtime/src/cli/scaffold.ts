@@ -13,19 +13,17 @@ export function renderAppTs(providers: DetectedProvider[]): string {
   const compat = detected.filter(p => p.kind === 'openai-compat');
   const codex = detected.find(p => p.kind === 'codex-oauth');
 
-  const sdkImports: string[] = [];
-  if (builtin.length > 0 || codex) sdkImports.push('configureProvider');
-  if (compat.length > 0) sdkImports.push('registerProvider');
-  sdkImports.push('flue');
+  const runtimeImports: string[] = [];
+  if (builtin.length > 0 || codex) runtimeImports.push('configureProvider');
+  if (compat.length > 0) runtimeImports.push('registerProvider');
 
   const lines: string[] = [];
   if (codex) lines.push(`import { execFileSync } from 'node:child_process';`);
-  lines.push(`import { ${sdkImports.join(', ')} } from '@flue/sdk/app';`);
+  if (runtimeImports.length > 0) lines.push(`import { ${runtimeImports.join(', ')} } from '@flue/runtime';`);
+  lines.push(`import { flue } from '@flue/runtime/routing';`);
   lines.push('');
 
   if (codex) {
-    // The Codex OAuth token expires (the CLI auto-refreshes it), so it must
-    // be fetched at startup — never embedded by init.
     lines.push('// Codex OAuth tokens expire, so fetch a fresh one every startup rather than');
     lines.push('// embedding it; codex-bridge reads (and refreshes) the Codex CLI session.');
     if (!codex.detail.startsWith(CODEX_BRIDGE_ON_PATH)) {
@@ -53,7 +51,6 @@ export function renderAppTs(providers: DetectedProvider[]): string {
     lines.push(`  api: 'openai-completions',`);
     lines.push(`  baseUrl: '${p.baseUrl}',`);
     lines.push(`  apiKey: process.env.${p.envVar},`);
-    lines.push(`  provider: '${p.name}',`);
     lines.push('});');
     lines.push('');
   }
@@ -62,7 +59,7 @@ export function renderAppTs(providers: DetectedProvider[]): string {
     lines.push('// inception init detected no provider credentials. Wire at least one, e.g.:');
     lines.push(`//   configureProvider('anthropic', { apiKey: process.env.ANTHROPIC_API_KEY });`);
     lines.push('// or an OpenAI-compatible endpoint (vLLM/llama.cpp/ollama):');
-    lines.push(`//   registerProvider('local', { api: 'openai-completions', baseUrl: 'http://localhost:8000/v1', apiKey: 'none', provider: 'local' });`);
+    lines.push(`//   registerProvider('local', { api: 'openai-completions', baseUrl: 'http://localhost:8000/v1' });`);
     lines.push('');
   }
 
@@ -81,20 +78,18 @@ export function pickDefaultModel(providers: DetectedProvider[]): string {
   return 'anthropic/claude-fable-5';
 }
 
-export function renderExampleAgent(defaultModel = 'anthropic/claude-fable-5'): string {
+export function renderExampleWorkflow(defaultModel = 'anthropic/claude-fable-5'): string {
   return `/**
- * Example inception workflow as a Flue agent handler.
+ * Example inception workflow (Flue >= 0.11: a file in src/workflows/ exporting run()).
  *
- * Run:    flue run example --target node --id run-1 --payload '{
+ * Run:    flue run example --target node --payload '{
  *           "runDir": "/tmp/example-1", "budgetUsd": 1
  *         }'
  * Watch:  inception watch /tmp/example-1
  */
-import type { FlueContext } from '@flue/sdk/client';
+import { createAgent, type FlueContext } from '@flue/runtime';
 import { runWorkflow } from 'inception-workflows';
 import * as v from 'valibot';
-
-export const triggers = { webhook: true };
 
 const Idea = v.object({
   title: v.string(),
@@ -103,14 +98,17 @@ const Idea = v.object({
 
 const ANGLES = ['practical', 'contrarian', 'long-term'];
 
-export default async function ({ init, payload, id }: FlueContext) {
-  const flueAgent = await init({
-    model: '${defaultModel}',
-    sandbox: 'empty',
-  });
+// Virtual in-memory sandbox by default; import { local } from '@flue/runtime/node'
+// and set sandbox: local() when subagents must read host files.
+const worker = createAgent(() => ({
+  model: '${defaultModel}',
+}));
+
+export async function run({ init, payload, id }: FlueContext) {
+  const harness = await init(worker);
 
   return runWorkflow(
-    flueAgent,
+    harness,
     { runId: id, runDir: payload.runDir, budgetUsd: payload.budgetUsd ?? 1 },
     async ({ agent, parallel, phase, log }) => {
       phase('Brainstorm');
@@ -130,8 +128,8 @@ export default async function ({ init, payload, id }: FlueContext) {
 
 export function scaffold(dir: string, providers: DetectedProvider[], force = false): ScaffoldResult {
   const files: Array<[string, string]> = [
-    [join('.flue', 'app.ts'), renderAppTs(providers)],
-    [join('.flue', 'agents', 'example.ts'), renderExampleAgent(pickDefaultModel(providers))],
+    [join('src', 'app.ts'), renderAppTs(providers)],
+    [join('src', 'workflows', 'example.ts'), renderExampleWorkflow(pickDefaultModel(providers))],
   ];
 
   const written: string[] = [];
