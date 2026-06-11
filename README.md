@@ -91,6 +91,18 @@ export async function run({ init, payload, id }) {
 
 The orchestrating agent writes this, launches it in a background terminal, and reads back one structured result. Model routing is per-call — finders on a cheap fast model, verifiers on a strong one.
 
+## Give it to your agent
+
+Paste this into any coding agent (Claude Code, Codex, OpenCode, Gemini CLI, …) to have it set up and use inception on its own:
+
+```text
+Read https://raw.githubusercontent.com/Milind220/inception/main/USE.md and follow
+its steps to set up inception, then write and run a dynamic workflow for this task:
+<your task here>
+```
+
+[USE.md](USE.md) carries the full agent-facing instructions; the skill in [skill/SKILL.md](skill/SKILL.md) is the permanent install for agents you work with regularly.
+
 ## Provider auth, including your Codex subscription
 
 `inception init` probes your machine for credentials and generates the Flue provider config (`src/app.ts`, consumed by `flue dev` / `flue run`):
