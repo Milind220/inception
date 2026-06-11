@@ -37,7 +37,13 @@ export class Budget implements BudgetView {
 
   costOf(model: string, usage: UsageLike | undefined): number {
     const reported = usage?.cost?.total;
-    if (typeof reported === 'number' && Number.isFinite(reported) && reported > 0) return reported;
+    const tokens = (usage?.input ?? 0) + (usage?.output ?? 0);
+    // A reported 0 is trustworthy only for a zero-token call: pi-ai also reports
+    // cost.total: 0 for models missing from its price registry, and trusting
+    // that would silently charge $0 for real spend.
+    if (typeof reported === 'number' && Number.isFinite(reported) && (reported > 0 || tokens === 0)) {
+      return Math.max(0, reported);
+    }
     const [inRate, outRate] = this.pricing[model] ?? FALLBACK_RATE;
     return ((usage?.input ?? 0) * inRate + (usage?.output ?? 0) * outRate) / 1_000_000;
   }
