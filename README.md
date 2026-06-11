@@ -102,10 +102,11 @@ Early but real. The runtime core is implemented and tested (17 passing tests); t
 - [x] Budget hard stop (provider-reported cost, pricing-table fallback), agent cap, concurrency cap
 - [x] Recursive `workflow()` with depth caps (default 5), shared budget across levels
 - [x] `inception-watch` CLI: live tail or replay of a run's event stream
-- [ ] `inception init` provider detection / `.flue` scaffolding
-- [ ] SKILL.md finalized + template workflows
+- [x] `inception init` provider detection / `.flue` scaffolding (`inception init`, `inception watch`)
+- [x] SKILL.md finalized + template workflows
+- [x] Live-verified end to end: real Flue run on `openai-codex/gpt-5.3-codex-spark` via codex-bridge OAuth, with cross-process resume
 - [ ] npm publish
-- [ ] Tested on: Claude Code · Codex CLI · OpenCode · Gemini CLI
+- [ ] Skill exercised by: Claude Code · Codex CLI · OpenCode · Gemini CLI
 
 > npm note: the bare `inception` package name is taken; packages will ship as `inception-workflows` (or a scope).
 
