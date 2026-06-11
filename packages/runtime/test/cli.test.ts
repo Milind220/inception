@@ -121,7 +121,7 @@ describe('scaffold', () => {
   it('writes src/app.ts and src/workflows/example.ts', () => {
     dir = mkdtempSync(join(tmpdir(), 'inception-cli-'));
     const res = scaffold(dir, detect({ env: { ANTHROPIC_API_KEY: 'x' } }));
-    expect(res.written.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
+    expect(res.written.sort()).toEqual(['package.json', join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
     expect(res.skipped).toEqual([]);
     expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
 
@@ -143,13 +143,27 @@ describe('scaffold', () => {
 
     const second = scaffold(dir, providers);
     expect(second.written).toEqual([]);
-    expect(second.skipped.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
+    expect(second.skipped.sort()).toEqual(['package.json', join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
     expect(readFileSync(appPath, 'utf8')).toBe('// hand-edited\n');
 
     const forced = scaffold(dir, providers, true);
     expect(forced.written.sort()).toEqual([join('src', 'app.ts'), join('src', 'workflows', 'example.ts')]);
-    expect(forced.skipped).toEqual([]);
+    expect(forced.skipped).toEqual(['package.json']); // never overwritten, even with force
     expect(readFileSync(appPath, 'utf8')).not.toBe('// hand-edited\n');
+  });
+
+  it('creates a package.json so npm install cannot climb to an ancestor, and never overwrites a real one', () => {
+    dir = mkdtempSync(join(tmpdir(), 'inception-cli-'));
+    scaffold(dir, detect());
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    expect(pkg.private).toBe(true);
+    expect(pkg.type).toBe('module');
+    expect(pkg.name).toMatch(/^[a-z0-9-]+$/);
+
+    const real = JSON.stringify({ name: 'my-app', dependencies: { 'left-pad': '1.0.0' } });
+    writeFileSync(join(dir, 'package.json'), real);
+    scaffold(dir, detect(), true);
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(real);
   });
 
   it('app.ts wires detected providers and omits undetected ones', () => {

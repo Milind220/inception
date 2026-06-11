@@ -22,10 +22,12 @@ This provides the `inception-workflows` package and the `inception` / `inception
 In the directory where the workflow should run:
 
 ```bash
-node ~/inception/packages/runtime/bin/inception.mjs init .
+node ~/inception/packages/runtime/bin/inception.mjs init .   # run BEFORE npm install
 npm install @flue/runtime@^0.11 valibot file:~/inception/packages/runtime
 npm install -D @flue/cli@^0.11
 ```
+
+`inception init` creates a minimal `package.json` when the directory has none — run it before `npm install`, otherwise npm walks up the tree and installs into the nearest ancestor that has a `package.json` (often `$HOME`).
 
 `inception init` probes the machine for provider credentials (Anthropic/OpenAI/DeepSeek/Fireworks/OpenRouter/Groq env keys, plus Codex ChatGPT-plan OAuth via codex-bridge) and scaffolds `src/app.ts` (provider wiring) and `src/workflows/example.ts` (a working example). It is idempotent and never overwrites existing files. Read its report: if no provider was detected, ask the user which credentials to use before going further.
 

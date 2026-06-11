@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { CODEX_BRIDGE_ON_PATH, type DetectedProvider } from './detect.js';
 
 export interface ScaffoldResult {
@@ -126,8 +126,19 @@ export async function run({ init, payload, id }: FlueContext) {
 `;
 }
 
+export function renderPackageJson(dirName: string): string {
+  return JSON.stringify({
+    name: dirName.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'inception-project',
+    private: true,
+    type: 'module',
+  }, null, 2) + '\n';
+}
+
 export function scaffold(dir: string, providers: DetectedProvider[], force = false): ScaffoldResult {
   const files: Array<[string, string]> = [
+    // Without a package.json in the project dir, a later `npm install` walks up
+    // the tree and installs into the nearest ancestor that has one (often $HOME).
+    ['package.json', renderPackageJson(basename(dir))],
     [join('src', 'app.ts'), renderAppTs(providers)],
     [join('src', 'workflows', 'example.ts'), renderExampleWorkflow(pickDefaultModel(providers))],
   ];
@@ -136,7 +147,10 @@ export function scaffold(dir: string, providers: DetectedProvider[], force = fal
   const skipped: string[] = [];
   for (const [rel, content] of files) {
     const abs = join(dir, rel);
-    if (existsSync(abs) && !force) {
+    // package.json is only ever created, never overwritten: a real one holds
+    // the user's dependencies, and --force is for regenerating scaffold files.
+    const overwritable = force && rel !== 'package.json';
+    if (existsSync(abs) && !overwritable) {
       skipped.push(rel);
       continue;
     }
