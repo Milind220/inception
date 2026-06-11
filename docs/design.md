@@ -2,6 +2,18 @@
 
 *June 2026. Findings from the initial research pass that shaped the architecture.*
 
+## Flue 0.11 migration note
+
+The research below was done against Flue **0.4.1** and is preserved as-is; treat 0.4-era API details (package names, file layout, sandbox strings, roles, `--id`) as historical. The shipped code targets Flue **>= 0.11**. The deltas:
+
+- **Package split**: `@flue/runtime` is the authoring package. `@flue/sdk` is now a different thing — Flue's remote client SDK (`createFlueClient`) for consuming deployed agents/workflows over HTTP.
+- **Layout**: workflows live in `src/workflows/<name>.ts` (filename = workflow name) and export a named `run(ctx: FlueContext)` — no default export, no `export const triggers`. Optional `export const route: WorkflowRouteHandler` exposes it at `POST /workflows/<name>`. Provider config lives in `src/app.ts` (`export default flue()`); `.flue/` remains supported as a legacy source dir.
+- **Agents**: defined via `createAgent(() => ({ model, instructions?, cwd?, sandbox?, tools?, skills?, subagents? }))`, initialized with `const harness = await init(agentDef)`.
+- **Roles removed**: no `.flue/roles/*.md` and no per-call `role` option; personas go in prompt text or `createAgent`'s `instructions`. Resume keys no longer include a role.
+- **Structured output**: `session.prompt`'s option is `result:` (inception's public `agent()` option stays `schema` and maps to it internally).
+- **Sandboxes**: the `'empty'`/`'local'` strings are gone. Omit `sandbox` for the default lightweight in-memory virtual sandbox, or pass `local()` from `@flue/runtime/node` for host filesystem/shell. The virtual sandbox is not a network isolation boundary.
+- **CLI**: `flue run <name> --target node --payload '...'` — no `--id` flag; Flue generates the runId and surfaces it as `ctx.id`. Dev server: `flue dev`. Deps: `@flue/runtime@^0.11` + dev `@flue/cli@^0.11`.
+
 ## The thesis
 
 Claude Code's dynamic workflows prove that agent-authored orchestration scripts beat turn-by-turn delegation for large tasks: the script holds the loop and the intermediate state, so the orchestrating agent's context holds only the answer. No open implementation exists. The pieces do:
@@ -37,11 +49,11 @@ What Flue does *not* provide — and what the inception runtime adds:
 - Error isolation: a failed subagent resolves to `null` instead of rejecting the run
 - `workflow()` for recursive nesting with a depth counter (default 5)
 
-## Prior art in this repo's lineage
+## Runtime patterns
 
-The runtime is an extraction, not an invention. `a production harness.ts` (a private project, 456 lines) is a production hand-written dynamic workflow with: a per-role model routing table, `Promise.all` finder waves, dedup-before-validation, adversarial validators, an append-only ledger, USD budget enforcement, and NDJSON event emission consumed by a zero-dependency TUI (`its observer`). Roughly 60% of that file is harness, identical across any workflow — that 60% becomes `packages/runtime`. The TUI becomes `inception watch`.
+The runtime distills patterns proven in production multi-agent review harnesses: per-role model routing tables, parallel finder waves, dedup-before-validation, adversarial validators, append-only ledgers, USD budget enforcement, and NDJSON event emission feeding a zero-dependency observer. Roughly 60% of any hand-written harness is this identical infrastructure — that share becomes `packages/runtime`, and the observer becomes `inception watch`.
 
-### Event schema (carried over)
+### Event schema
 
 ```
 run_start      { runId, models, budgetUsd, ... }
@@ -52,7 +64,7 @@ ledger_append  { ... app-defined ... }
 run_end        { totals }
 ```
 
-Written to `<runDir>/events.ndjson`; prompts mirrored to `<runDir>/prompts/<sid>.txt`. The TUI tails live or replays (`--replay --speed N`).
+Written to `<runDir>/events.ndjson`; prompts mirrored to `<runDir>/prompts/<sid>.txt`. The observer tails live or replays (`--replay`).
 
 ## Provider auth
 
@@ -78,10 +90,10 @@ Written to `<runDir>/events.ndjson`; prompts mirrored to `<runDir>/prompts/<sid>
 
 ## Execution plan
 
-1. **Extract the harness** from a production harness into `packages/runtime`. Validate by rewriting a production harness on top of it (target: ~150 lines of pure orchestration logic remain).
+1. **Implement the runtime core** in `packages/runtime`, validating the API against a production-scale review workflow (target: ~150 lines of pure orchestration logic remain in the workflow file).
 2. **Journal + resume** — the only net-new engineering.
 3. **SKILL.md + templates**; dogfood in Claude Code, then Codex (`codex exec`), then OpenCode.
-4. **`inception watch`** (lift the observer) and **`inception init`** provider codegen.
+4. **`inception watch`** and **`inception init`** provider codegen.
 5. **Recursive `workflow()`** with depth caps; optional `flue dev` server mode so flue-tui-style clients can attach over SSE.
 
 ## Risks

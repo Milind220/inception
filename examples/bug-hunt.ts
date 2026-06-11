@@ -1,9 +1,9 @@
 /**
- * Example inception workflow as a Flue agent handler.
+ * Example inception workflow (Flue >= 0.11).
  *
- * Setup:  a .flue/ project with @flue/sdk + inception-workflows installed,
- *         this file at .flue/agents/bug-hunt.ts, providers in .flue/app.ts.
- * Run:    flue run bug-hunt --target node --id run-1 --payload '{
+ * Setup:  a Flue project with @flue/runtime + inception-workflows installed,
+ *         this file at src/workflows/bug-hunt.ts, providers in src/app.ts.
+ * Run:    flue run bug-hunt --target node --payload '{
  *           "dir": "/abs/path/to/repo", "runDir": "/tmp/bug-hunt-1", "budgetUsd": 3
  *         }'
  * Watch:  inception-watch /tmp/bug-hunt-1
@@ -11,11 +11,10 @@
  * Shape: fan out finders per lane (cheap model) → adversarial verify panel
  * (strong model, nested workflow) → return only majority-surviving findings.
  */
-import type { FlueContext } from '@flue/sdk/client';
+import { createAgent, type FlueContext } from '@flue/runtime';
+import { local } from '@flue/runtime/node';
 import { runWorkflow } from 'inception-workflows';
 import * as v from 'valibot';
-
-export const triggers = { webhook: true };
 
 const Findings = v.object({
   findings: v.array(v.object({
@@ -28,15 +27,18 @@ const Verdict = v.object({ refuted: v.boolean(), why: v.string() });
 
 const LANES = ['error handling', 'concurrency and races', 'input validation'];
 
-export default async function ({ init, payload, id }: FlueContext) {
-  const flueAgent = await init({
+export async function run({ init, payload, id }: FlueContext) {
+  // local() because subagents must read the repo on the host filesystem; omit
+  // `sandbox` for the default in-memory virtual sandbox when no files are needed.
+  const hunter = createAgent(() => ({
     model: 'anthropic/claude-fable-5',
-    sandbox: 'local', // subagents need to read the repo
+    sandbox: local(),
     cwd: payload.dir,
-  });
+  }));
+  const harness = await init(hunter);
 
   return runWorkflow(
-    flueAgent,
+    harness,
     { runId: id, runDir: payload.runDir, budgetUsd: payload.budgetUsd ?? 3 },
     async ({ agent, parallel, phase, log, workflow }) => {
       phase('Find');
@@ -44,7 +46,7 @@ export default async function ({ init, payload, id }: FlueContext) {
         agent(
           `Review the repository at ${payload.dir} for bugs in the lane: ${lane}. ` +
           `Read code with shell tools; report only concrete, evidence-backed findings.`,
-          { schema: Findings, model: 'openai/gpt-5.4-mini', label: `finder:${lane}` },
+          { schema: Findings, model: 'openai-codex/gpt-5.3-codex-spark', label: `finder:${lane}` },
         ),
       ))).filter(Boolean).flatMap(r => r!.findings);
       log(`${found.length} candidates found`);

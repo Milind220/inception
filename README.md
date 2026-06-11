@@ -15,7 +15,7 @@ The pieces to open it up all exist separately:
 - **Code-as-orchestration** — Cloudflare Code Mode, smolagents `CodeAgent`
 - **Recursive, context-isolated subagents** — Claude Code's nested subagents (depth 5), the [Recursive Language Models](https://arxiv.org/abs/2512.24601) result
 - **Cross-agent skill portability** — the SKILL.md standard, adopted by 30+ agents
-- **A multi-provider agent harness** — [Flue](https://www.npmjs.com/package/@flue/sdk): sessions, valibot structured output, per-call cost accounting, sandboxes, an SSE dev server
+- **A multi-provider agent harness** — [Flue](https://www.npmjs.com/package/@flue/runtime): sessions, valibot structured output, per-call cost accounting, sandboxes, an SSE dev server
 
 Nobody has combined them. inception does.
 
@@ -32,7 +32,7 @@ Nobody has combined them. inception does.
 │                          + journal (resume), concurrency │
 │                          caps, NDJSON events, recursion  │
 ├─────────────────────────────────────────────────────────┤
-│  @flue/sdk               sessions, model routing,        │
+│  @flue/runtime           sessions, model routing,        │
 │                          schemas, sandboxes, cost        │
 ├─────────────────────────────────────────────────────────┤
 │  providers               Anthropic · OpenAI · Codex      │
@@ -50,6 +50,9 @@ Nobody has combined them. inception does.
 ## What a workflow looks like
 
 ```js
+// src/workflows/bug-hunt.ts
+import { createAgent } from '@flue/runtime';
+import { local } from '@flue/runtime/node';
 import { runWorkflow } from 'inception-workflows';
 import * as v from 'valibot';
 
@@ -57,10 +60,12 @@ const Finding = v.object({ title: v.string(), refs: v.array(v.string()) });
 const Verdict = v.object({ real: v.boolean(), why: v.string() });
 const LANES = ['error handling', 'concurrency', 'input validation'];
 
-export default async function ({ init, payload, id }) {
-  const flueAgent = await init({ model: 'anthropic/claude-fable-5', sandbox: 'local', cwd: payload.dir });
+export async function run({ init, payload, id }) {
+  // local() because subagents read the repo; omit `sandbox` for the in-memory default.
+  const hunter = createAgent(() => ({ model: 'anthropic/claude-fable-5', sandbox: local(), cwd: payload.dir }));
+  const harness = await init(hunter);
 
-  return runWorkflow(flueAgent, { runId: id, runDir: payload.runDir, budgetUsd: 5 },
+  return runWorkflow(harness, { runId: id, runDir: payload.runDir, budgetUsd: 5 },
     async ({ agent, parallel, phase, budget }) => {
       phase('Find');
       const findings = (await parallel(LANES.map(lane => () =>
@@ -88,21 +93,23 @@ The orchestrating agent writes this, launches it in a background terminal, and r
 
 ## Provider auth, including your Codex subscription
 
-`inception init` probes your machine for credentials and generates the Flue provider config:
+`inception init` probes your machine for credentials and generates the Flue provider config (`src/app.ts`, consumed by `flue dev` / `flue run`):
 
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, …
 - **Codex ChatGPT-plan OAuth** (`~/.codex/auth.json`) — route workflow subagents through your existing Codex subscription. This uses an undocumented endpoint that can change without notice; the sanctioned fallback (`codex exec --json --output-schema`) is built in.
 
 ## Status
 
-Early but real. The runtime core is implemented and tested (44 passing tests, including adversarial-review regressions); the patterns are extracted from a production production review harness. See [docs/design.md](docs/design.md) for the full design and research notes, and [examples/bug-hunt.ts](examples/bug-hunt.ts) for a complete workflow.
+Early but real. The runtime core is implemented and tested (44 passing tests, including adversarial-review regressions); the patterns are distilled from production multi-agent review harnesses. See [docs/design.md](docs/design.md) for the full design and research notes, and [examples/bug-hunt.ts](examples/bug-hunt.ts) for a complete workflow.
 
-- [x] Runtime: `agent()/parallel()/pipeline()/phase()/log()/budget` over `@flue/sdk` (zero runtime deps, structurally typed)
+Targets Flue >= 0.11 (`@flue/runtime`). The 0.4-era `@flue/sdk` API is not supported — `@flue/sdk` is now Flue's remote client SDK (`createFlueClient`) for consuming deployed agents/workflows over HTTP, which inception does not use.
+
+- [x] Runtime: `agent()/parallel()/pipeline()/phase()/log()/budget` over `@flue/runtime` (zero runtime deps, structurally typed)
 - [x] Journal + resume (content-hash keyed; edited calls re-run, unchanged calls return cached)
 - [x] Budget stop enforced before every call (provider-reported cost, pricing-table fallback; in-flight overshoot bounded by concurrency × one call), agent cap, concurrency cap
 - [x] Recursive `workflow()` with depth caps (default 5), shared budget across levels
 - [x] `inception-watch` CLI: live tail or replay of a run's event stream
-- [x] `inception init` provider detection / `.flue` scaffolding (`inception init`, `inception watch`)
+- [x] `inception init` provider detection / `src/` scaffolding (`inception init`, `inception watch`)
 - [x] SKILL.md finalized + template workflows
 - [x] Live-verified end to end: real Flue run on `openai-codex/gpt-5.3-codex-spark` via codex-bridge OAuth, with cross-process resume
 - [ ] npm publish
