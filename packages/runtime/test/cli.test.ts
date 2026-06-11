@@ -92,6 +92,17 @@ describe('disk-boundary probes', () => {
     expect(codexAuthUsable(file)).toBe(true);
   });
 
+  it('isOnPath resolves Windows PATHEXT variants', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'inception-pathext-'));
+    try {
+      writeFileSync(join(dir, 'codex-bridge.exe'), '');
+      expect(isOnPath('codex-bridge', dir, '.COM;.EXE;.BAT')).toBe(true);
+      expect(isOnPath('codex-bridge', dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('isOnPath finds a binary only in the given PATH string', () => {
     dir = mkdtempSync(join(tmpdir(), 'inception-cli-'));
     writeFileSync(join(dir, 'codex-bridge'), '#!/bin/sh\n');
