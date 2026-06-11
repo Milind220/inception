@@ -23,7 +23,7 @@ function structuralFingerprint(value: unknown): string {
  * (results.ndjson) that makes runs resumable.
  *
  * Resume keying: results are keyed by a content hash of the full call shape
- * (prompt, model, role, label, thinkingLevel, schema/tools fingerprints), not
+ * (prompt, model, label, thinkingLevel, schema/tools fingerprints), not
  * by call sequence — completion order under concurrency is nondeterministic,
  * so sequence numbers don't survive re-runs. Identical calls are disambiguated
  * by an occurrence counter; since their inputs are identical, their cached
@@ -55,13 +55,12 @@ export class Journal {
    */
   static callKey(
     prompt: string,
-    opts: { model?: string; role?: string; label?: string; thinkingLevel?: string; schema?: unknown; tools?: unknown[]; images?: unknown[] },
+    opts: { model?: string; label?: string; thinkingLevel?: string; schema?: unknown; tools?: unknown[]; images?: unknown[] },
   ): string {
     return createHash('sha256')
       .update(JSON.stringify({
         prompt,
         model: opts.model ?? '',
-        role: opts.role ?? '',
         label: opts.label ?? '',
         thinkingLevel: opts.thinkingLevel ?? '',
         schema: structuralFingerprint(opts.schema),

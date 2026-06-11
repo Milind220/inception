@@ -56,18 +56,18 @@ function makeApi(shared: Shared, depth: number, phaseRef: { current: string | un
       const t0 = Date.now();
       shared.journal.emit('agent_start', {
         sid, label, phase, depth,
-        model: opts.model, role: opts.role,
+        model: opts.model,
         prompt_head: prompt.slice(0, 400),
         prompt_file: shared.journal.savePrompt(sid, prompt),
       });
       try {
         // Budget may have been exhausted while queued; skip rather than spend.
         shared.budget.assertAvailable();
-        const session = await shared.runtime.session(sid, opts.role ? { role: opts.role } : undefined);
+        const session = await shared.runtime.session(sid);
         const promptOpts: Record<string, unknown> = {};
-        if (opts.schema !== undefined) promptOpts.schema = opts.schema;
+        // inception's public option is `schema`; Flue >= 0.11 calls it `result`.
+        if (opts.schema !== undefined) promptOpts.result = opts.schema;
         if (opts.model !== undefined) promptOpts.model = opts.model;
-        if (opts.role !== undefined) promptOpts.role = opts.role;
         if (opts.thinkingLevel !== undefined) promptOpts.thinkingLevel = opts.thinkingLevel;
         if (opts.tools !== undefined) promptOpts.tools = opts.tools;
         if (opts.images !== undefined) promptOpts.images = opts.images;
@@ -159,12 +159,16 @@ function makeApi(shared: Shared, depth: number, phaseRef: { current: string | un
 }
 
 /**
- * Run a workflow body against a Flue agent runtime (or any AgentLike).
+ * Run a workflow body against a Flue harness (or any AgentLike).
  *
  * ```ts
- * export default async function ({ init, payload, id }: FlueContext) {
- *   const agent = await init({ model: 'anthropic/claude-fable-5', sandbox: 'empty' });
- *   return runWorkflow(agent, { runId: id, runDir: payload.runDir, budgetUsd: payload.budgetUsd },
+ * // src/workflows/my-workflow.ts (Flue >= 0.11)
+ * import { createAgent, type FlueContext } from '@flue/runtime';
+ * const worker = createAgent(() => ({ model: 'anthropic/claude-fable-5' }));
+ *
+ * export async function run({ init, payload, id }: FlueContext) {
+ *   const harness = await init(worker);
+ *   return runWorkflow(harness, { runId: id, runDir: payload.runDir, budgetUsd: payload.budgetUsd },
  *     async ({ agent, parallel, phase, budget }) => { ... });
  * }
  * ```

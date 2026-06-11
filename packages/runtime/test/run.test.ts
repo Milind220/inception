@@ -39,7 +39,7 @@ const usage = (input: number, output: number, costTotal?: number) => ({
 });
 
 const echo: PromptImpl = async (_sid, text, opts) => ({
-  data: opts?.schema !== undefined ? { echoed: text } : undefined,
+  data: opts?.result !== undefined ? { echoed: text } : undefined,
   text: `echo: ${text}`,
   usage: usage(100, 50, 0.001),
   model: { id: 'fake/model-1' },
@@ -71,15 +71,16 @@ describe('agent()', () => {
     expect(n).toBe(2);
   });
 
-  it('forwards model/role/thinkingLevel to the session prompt', async () => {
+  it('forwards model/thinkingLevel and maps schema to the Flue result option', async () => {
     let seen: Record<string, unknown> | undefined;
     const rt = fakeRuntime(async (_sid, _text, opts) => {
       seen = opts;
-      return { text: 'ok', usage: usage(1, 1, 0.0001), model: { id: 'fake/m' } };
+      return { data: { ok: true }, text: 'ok', usage: usage(1, 1, 0.0001), model: { id: 'fake/m' } };
     });
     await runWorkflow(rt, { runId: 'r1' }, ({ agent }) =>
-      agent('p', { model: 'deepseek/v4', role: 'finder', thinkingLevel: 'extended' }));
-    expect(seen).toMatchObject({ model: 'deepseek/v4', role: 'finder', thinkingLevel: 'extended' });
+      agent('p', { model: 'deepseek/v4', thinkingLevel: 'extended', schema: { kind: 's' } }));
+    expect(seen).toMatchObject({ model: 'deepseek/v4', thinkingLevel: 'extended', result: { kind: 's' } });
+    expect(seen).not.toHaveProperty('schema');
   });
 });
 

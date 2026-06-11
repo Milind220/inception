@@ -2,7 +2,7 @@ import type { BudgetView, UsageLike } from './types.js';
 
 export class BudgetExceededError extends Error {
   constructor(spent: number, total: number) {
-    super(`workflow budget exhausted: spent $${spent.toFixed(4)} of $${total.toFixed(2)}`);
+    super(`workflow budget exhausted: spent $${spent.toFixed(4)} of $${total}`);
     this.name = 'BudgetExceededError';
   }
 }
