@@ -48,9 +48,10 @@ Create `.flue/agents/<name>.ts`: a default-export Flue handler that calls `runWo
 Hard rules the runtime enforces — design around them:
 
 - **`null` on failure.** A dead subagent never kills the run; it returns `null`. Filter every fan-out result with `.filter(Boolean)` before using it.
-- **`BudgetExceededError` is a hard stop.** Once `spent >= budgetUsd`, every further direct `agent()` call throws — including calls already queued when the budget ran out (skipped, never billed). Inside `parallel()`/`pipeline()` the throw collapses to `null` for that item, so check `budget.remaining()` between phases to stop cleanly.
-- **`AgentCapExceededError`** after `maxAgents` (default 1000) spawns — a runaway-loop backstop, not a knob to tune first.
-- **Resume.** Re-run with the same `runDir` and every unchanged call returns its journaled result at zero cost; only edited calls re-run. Calls are keyed by a content hash of prompt + model + role + label (identical calls matched by occurrence order), so changing a prompt invalidates exactly that call.
+- **`BudgetExceededError` aborts the run.** The stop is enforced before each call starts: once `spent >= budgetUsd`, every further `agent()` call throws, and the error propagates out of `parallel()`/`pipeline()` so a budget-dead run fails loudly instead of "succeeding" with all-null results. Calls already in flight when the ceiling is crossed still finish and bill, so the overshoot is bounded by `concurrency` × the largest single-call cost — size `budgetUsd` with that margin in mind. Recovery is cheap: re-run with a higher budget and the same `runDir`; completed calls replay free.
+- **`AgentCapExceededError`** after `maxAgents` (default 1000) live spawns — cached replays don't count. A runaway-loop backstop, not a knob to tune first.
+- **Resume.** Re-run with the same `runDir` and every unchanged call returns its journaled result at zero cost; only edited calls re-run. Calls are keyed by a content hash of the full call shape — prompt, model, role, label, thinkingLevel, schema/tools fingerprints (identical calls matched by occurrence order) — so changing any of those invalidates exactly that call.
+- **`concurrency` bounds concurrent `agent()` LLM calls**, not arbitrary thunk bodies. `phase()` sets shared state — call it between fan-outs; inside `parallel()` thunks, tag calls with `opts.phase` instead.
 
 ### Template — adapt this, don't write from scratch
 

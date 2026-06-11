@@ -77,7 +77,7 @@ export interface RunOptions {
    * endpoints). Unknown models fall back to [5, 25].
    */
   pricing?: Record<string, [number, number]>;
-  /** Reuse journaled results from a previous run in runDir. Default true when runDir is set. */
+  /** Reuse journaled results from a previous run. Default true; the journal only loads when runDir is set. */
   resume?: boolean;
   /** Mirror of every emitted event, in addition to events.ndjson. */
   onEvent?: (evt: WorkflowEvent) => void;
