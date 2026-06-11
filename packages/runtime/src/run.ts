@@ -33,29 +33,33 @@ interface Shared {
 function makeApi(shared: Shared, depth: number, phaseRef: { current: string | undefined }): WorkflowApi {
   const agent = async (prompt: string, opts: AgentOpts = {}): Promise<any> => {
     shared.budget.assertAvailable();
-    if (shared.agentsSpawned >= shared.maxAgents) throw new AgentCapExceededError(shared.maxAgents);
-    shared.agentsSpawned++;
 
     const sid = `${shared.runId}-a${shared.seq++}`;
     const label = opts.label ?? prompt.slice(0, 60).replace(/\s+/g, ' ');
     const phase = opts.phase ?? phaseRef.current;
     const key = Journal.callKey(prompt, opts);
 
+    // Cached replays spawn nothing: no cap slot, no agent_start — observers see
+    // agent_end{status:'cached'} alone.
     const cached = shared.journal.lookup(key);
     if (cached.hit) {
       shared.journal.emit('agent_end', { sid, status: 'cached', label, phase, depth, costUsd: 0, duration_ms: 0 });
       return cached.data;
     }
 
-    shared.journal.emit('agent_start', {
-      sid, label, phase, depth,
-      model: opts.model, role: opts.role,
-      prompt_head: prompt.slice(0, 400),
-      prompt_file: shared.journal.savePrompt(sid, prompt),
-    });
+    if (shared.agentsSpawned >= shared.maxAgents) throw new AgentCapExceededError(shared.maxAgents);
+    shared.agentsSpawned++;
 
-    const t0 = Date.now();
+    // Everything observable happens after the slot is acquired, so agent_start
+    // means "executing now" (not "queued") and duration_ms excludes queue wait.
     return shared.limiter.run(async () => {
+      const t0 = Date.now();
+      shared.journal.emit('agent_start', {
+        sid, label, phase, depth,
+        model: opts.model, role: opts.role,
+        prompt_head: prompt.slice(0, 400),
+        prompt_file: shared.journal.savePrompt(sid, prompt),
+      });
       try {
         // Budget may have been exhausted while queued; skip rather than spend.
         shared.budget.assertAvailable();
@@ -97,8 +101,17 @@ function makeApi(shared: Shared, depth: number, phaseRef: { current: string | un
     });
   };
 
+  // Budget exhaustion is a run-level condition, not an item-level failure:
+  // swallowing it would let a budget-dead run "succeed" with all-null results.
+  // Propagated, the run ends loudly and a re-run with the same runDir replays
+  // every completed call from the journal for free.
+  const swallowItemError = (err: unknown): null => {
+    if (err instanceof BudgetExceededError) throw err;
+    return null;
+  };
+
   const parallel = async <T>(thunks: Thunk<T>[]): Promise<(T | null)[]> =>
-    Promise.all(thunks.map(t => Promise.resolve().then(t).catch(() => null)));
+    Promise.all(thunks.map(t => Promise.resolve().then(t).catch(swallowItemError)));
 
   const pipeline = async (items: any[], ...stages: Stage[]): Promise<any[]> =>
     Promise.all(items.map(async (item, index) => {
@@ -106,8 +119,8 @@ function makeApi(shared: Shared, depth: number, phaseRef: { current: string | un
       for (const stage of stages) {
         try {
           prev = await stage(prev, item, index);
-        } catch {
-          return null; // a throwing stage drops the item, not the run
+        } catch (err) {
+          return swallowItemError(err); // a throwing stage drops the item, not the run
         }
       }
       return prev;
