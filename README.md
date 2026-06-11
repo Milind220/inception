@@ -50,31 +50,38 @@ Nobody has combined them. inception does.
 ## What a workflow looks like
 
 ```js
-import { agent, parallel, phase, budget } from 'inception-workflows';
+import { runWorkflow } from 'inception-workflows';
 import * as v from 'valibot';
 
 const Finding = v.object({ title: v.string(), refs: v.array(v.string()) });
 const Verdict = v.object({ real: v.boolean(), why: v.string() });
+const LANES = ['error handling', 'concurrency', 'input validation'];
 
-phase('Find');
-const findings = (await parallel(LANES.map(lane => () =>
-  agent(`Hunt for bugs in ${lane}`, {
-    schema: v.object({ findings: v.array(Finding) }),
-    model: 'openai-codex/gpt-5.3-codex-spark',
-  })
-))).filter(Boolean).flatMap(r => r.findings);
+export default async function ({ init, payload, id }) {
+  const flueAgent = await init({ model: 'anthropic/claude-fable-5', sandbox: 'local', cwd: payload.dir });
 
-phase('Verify');
-const confirmed = [];
-for (const f of findings) {
-  if (budget.remaining() <= 0) break;
-  const votes = await parallel([1, 2, 3].map(() => () =>
-    agent(`Try to refute: ${f.title}`, { schema: Verdict, model: 'anthropic/claude-fable-5' })
-  ));
-  if (votes.filter(Boolean).filter(x => x.real).length >= 2) confirmed.push(f);
+  return runWorkflow(flueAgent, { runId: id, runDir: payload.runDir, budgetUsd: 5 },
+    async ({ agent, parallel, phase, budget }) => {
+      phase('Find');
+      const findings = (await parallel(LANES.map(lane => () =>
+        agent(`Hunt for bugs in ${lane}`, {
+          schema: v.object({ findings: v.array(Finding) }),
+          model: 'openai-codex/gpt-5.3-codex-spark',
+        })
+      ))).filter(Boolean).flatMap(r => r.findings);
+
+      phase('Verify');
+      const confirmed = [];
+      for (const f of findings) {
+        if (budget.remaining() <= 0) break;
+        const votes = await parallel([1, 2, 3].map(() => () =>
+          agent(`Try to refute: ${f.title}`, { schema: Verdict, model: 'anthropic/claude-fable-5' })
+        ));
+        if (votes.filter(Boolean).filter(x => x.real).length >= 2) confirmed.push(f);
+      }
+      return { confirmed };
+    });
 }
-
-return { confirmed };
 ```
 
 The orchestrating agent writes this, launches it in a background terminal, and reads back one structured result. Model routing is per-call — finders on a cheap fast model, verifiers on a strong one.
