@@ -3,15 +3,34 @@ import { createHash } from 'node:crypto';
 import type { WorkflowEvent } from './types.js';
 
 /**
+ * Stable-enough identity for schemas and tool definitions: valibot schemas are
+ * plain data plus validator functions, so serializing with functions reduced to
+ * their names captures the structure. Anything unserializable (circular lazy
+ * schemas) degrades to a constant — still keyed as "present", never a crash.
+ */
+function structuralFingerprint(value: unknown): string {
+  if (value === undefined) return '';
+  try {
+    return JSON.stringify(value, (_k, v) => (typeof v === 'function' ? `fn:${v.name || 'anon'}` : v)) ?? 'present';
+  } catch {
+    return 'present';
+  }
+}
+
+/**
  * Per-run persistence: an NDJSON event stream for observers (events.ndjson),
  * full prompts mirrored to prompts/<sid>.txt, and a result journal
  * (results.ndjson) that makes runs resumable.
  *
- * Resume keying: results are keyed by a content hash of the call
- * (prompt + model + role + label), not by call sequence — completion order
- * under concurrency is nondeterministic, so sequence numbers don't survive
- * re-runs. Identical calls are disambiguated by an occurrence counter;
- * since their inputs are identical, their cached results are interchangeable.
+ * Resume keying: results are keyed by a content hash of the full call shape
+ * (prompt, model, label, thinkingLevel, schema/tools fingerprints), not
+ * by call sequence — completion order under concurrency is nondeterministic,
+ * so sequence numbers don't survive re-runs. Identical calls are disambiguated
+ * by an occurrence counter; since their inputs are identical, their cached
+ * results are treated as interchangeable. Corollary: if a journal line is ever
+ * lost (torn write, manual edit), occurrence matching shifts by one for that
+ * key — safe under the interchangeability assumption, but identical calls are
+ * NOT guaranteed to map back to the same physical result across runs.
  *
  * All filesystem writes are best-effort: observability and resumability must
  * never alter run behavior.
@@ -29,9 +48,25 @@ export class Journal {
     if (runDir && resume) this.load();
   }
 
-  static callKey(prompt: string, opts: { model?: string; role?: string; label?: string }): string {
+  /**
+   * Every option that can change what the provider returns is part of the key —
+   * a cached structured object must never be served to a call that dropped the
+   * schema, raised thinkingLevel, or changed its tools.
+   */
+  static callKey(
+    prompt: string,
+    opts: { model?: string; label?: string; thinkingLevel?: string; schema?: unknown; tools?: unknown[]; images?: unknown[] },
+  ): string {
     return createHash('sha256')
-      .update(JSON.stringify({ prompt, model: opts.model ?? '', role: opts.role ?? '', label: opts.label ?? '' }))
+      .update(JSON.stringify({
+        prompt,
+        model: opts.model ?? '',
+        label: opts.label ?? '',
+        thinkingLevel: opts.thinkingLevel ?? '',
+        schema: structuralFingerprint(opts.schema),
+        tools: structuralFingerprint(opts.tools),
+        images: opts.images?.length ?? 0,
+      }))
       .digest('hex')
       .slice(0, 24);
   }

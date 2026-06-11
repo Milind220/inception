@@ -1,7 +1,7 @@
 {
   "name": "inception-workflows",
   "version": "0.1.0",
-  "description": "Workflow runtime for inception: agent()/parallel()/pipeline()/budget over @flue/sdk, with journaling, resume, and a watch CLI",
+  "description": "Workflow runtime for inception: agent()/parallel()/pipeline()/budget over @flue/runtime, with journaling, resume, and a watch CLI",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
-  "bin": { "inception-watch": "bin/inception-watch.mjs" },
+  "bin": { "inception": "bin/inception.mjs", "inception-watch": "bin/inception-watch.mjs" },
   "files": ["dist", "bin", "README.md"],
   "scripts": {
     "build": "tsc",

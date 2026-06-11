@@ -1,7 +1,7 @@
 /**
- * Structural types for the slice of @flue/sdk the runtime touches.
- * Kept structural (not imported) so the package has zero runtime deps and
- * tests can inject fakes; any real FlueAgent satisfies AgentLike.
+ * Structural types for the slice of @flue/runtime (>= 0.11) the runtime
+ * touches. Kept structural (not imported) so the package has zero runtime
+ * deps and tests can inject fakes; any real FlueHarness satisfies AgentLike.
  */
 
 export interface UsageLike {
@@ -25,18 +25,16 @@ export interface SessionLike {
 }
 
 export interface AgentLike {
-  session(id?: string, options?: { role?: string }): Promise<SessionLike>;
+  session(name?: string): Promise<SessionLike>;
 }
 
 export type ThinkingLevel = 'minimal' | 'default' | 'extended' | 'off';
 
 export interface AgentOpts {
-  /** Valibot (or compatible) schema. When set, agent() returns the parsed object. */
+  /** Valibot (or compatible) schema. When set, agent() returns the parsed object (mapped to Flue's `result` option). */
   schema?: unknown;
   /** 'provider/modelId' override for this call. */
   model?: string;
-  /** Role file name, resolved by Flue from .flue/roles/<role>.md. */
-  role?: string;
   thinkingLevel?: ThinkingLevel;
   /** Display label for events/TUI. Defaults to a prompt head. */
   label?: string;
@@ -77,7 +75,7 @@ export interface RunOptions {
    * endpoints). Unknown models fall back to [5, 25].
    */
   pricing?: Record<string, [number, number]>;
-  /** Reuse journaled results from a previous run in runDir. Default true when runDir is set. */
+  /** Reuse journaled results from a previous run. Default true; the journal only loads when runDir is set. */
   resume?: boolean;
   /** Mirror of every emitted event, in addition to events.ndjson. */
   onEvent?: (evt: WorkflowEvent) => void;

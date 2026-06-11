@@ -39,7 +39,7 @@ const usage = (input: number, output: number, costTotal?: number) => ({
 });
 
 const echo: PromptImpl = async (_sid, text, opts) => ({
-  data: opts?.schema !== undefined ? { echoed: text } : undefined,
+  data: opts?.result !== undefined ? { echoed: text } : undefined,
   text: `echo: ${text}`,
   usage: usage(100, 50, 0.001),
   model: { id: 'fake/model-1' },
@@ -71,15 +71,16 @@ describe('agent()', () => {
     expect(n).toBe(2);
   });
 
-  it('forwards model/role/thinkingLevel to the session prompt', async () => {
+  it('forwards model/thinkingLevel and maps schema to the Flue result option', async () => {
     let seen: Record<string, unknown> | undefined;
     const rt = fakeRuntime(async (_sid, _text, opts) => {
       seen = opts;
-      return { text: 'ok', usage: usage(1, 1, 0.0001), model: { id: 'fake/m' } };
+      return { data: { ok: true }, text: 'ok', usage: usage(1, 1, 0.0001), model: { id: 'fake/m' } };
     });
     await runWorkflow(rt, { runId: 'r1' }, ({ agent }) =>
-      agent('p', { model: 'deepseek/v4', role: 'finder', thinkingLevel: 'extended' }));
-    expect(seen).toMatchObject({ model: 'deepseek/v4', role: 'finder', thinkingLevel: 'extended' });
+      agent('p', { model: 'deepseek/v4', thinkingLevel: 'extended', schema: { kind: 's' } }));
+    expect(seen).toMatchObject({ model: 'deepseek/v4', thinkingLevel: 'extended', result: { kind: 's' } });
+    expect(seen).not.toHaveProperty('schema');
   });
 });
 
@@ -263,8 +264,134 @@ describe('journal + resume', () => {
   });
 });
 
+describe('interrogate regressions', () => {
+  let dir: string;
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); dir = ''; });
+
+  it('parallel and pipeline propagate BudgetExceededError instead of nulling it', async () => {
+    const rt = fakeRuntime(async () => ({ text: 'ok', usage: usage(0, 0, 0.6), model: { id: 'fake/m' } }));
+    await expect(
+      runWorkflow(rt, { runId: 'r1', budgetUsd: 1, concurrency: 1 }, ({ agent, parallel }) =>
+        parallel([() => agent('a'), () => agent('b'), () => agent('c')])),
+    ).rejects.toThrow(BudgetExceededError);
+
+    const rt2 = fakeRuntime(async () => ({ text: 'ok', usage: usage(0, 0, 0.6), model: { id: 'fake/m' } }));
+    await expect(
+      runWorkflow(rt2, { runId: 'r2', budgetUsd: 1, concurrency: 1 }, ({ agent, pipeline }) =>
+        pipeline(['a', 'b', 'c'], (item: string) => agent(item))),
+    ).rejects.toThrow(BudgetExceededError);
+  });
+
+  it('cached replays do not consume the maxAgents cap', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'inception-'));
+    const rt1 = fakeRuntime(echo);
+    await runWorkflow(rt1, { runId: 'r1', runDir: dir, maxAgents: 2 }, async ({ agent }) => {
+      await agent('a');
+      await agent('b');
+    });
+    // Replay both cached, then spawn 2 live — must not throw despite 4 calls total.
+    const rt2 = fakeRuntime(echo);
+    await runWorkflow(rt2, { runId: 'r2', runDir: dir, maxAgents: 2 }, async ({ agent }) => {
+      await agent('a');
+      await agent('b');
+      await agent('c');
+      await agent('d');
+    });
+    expect(rt2.calls.map(c => c.text)).toEqual(['c', 'd']);
+  });
+
+  it('cached replays emit agent_end only; live calls emit start strictly inside their slot', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'inception-'));
+    const slow = fakeRuntime(async (_sid, text) => {
+      await new Promise(r => setTimeout(r, 10));
+      return { text: `ok:${text}`, usage: usage(1, 1, 0.0001), model: { id: 'fake/m' } };
+    });
+    const events: string[] = [];
+    await runWorkflow(slow, {
+      runId: 'r1', runDir: dir, concurrency: 1,
+      onEvent: e => { if (String(e.type).startsWith('agent_')) events.push(`${e.type}:${e.status ?? ''}`); },
+    }, ({ agent, parallel }) => parallel([() => agent('x'), () => agent('y')]));
+    // With one slot, the second start cannot fire before the first end.
+    expect(events).toEqual(['agent_start:', 'agent_end:ok', 'agent_start:', 'agent_end:ok']);
+
+    const cachedEvents: string[] = [];
+    await runWorkflow(fakeRuntime(echo), {
+      runId: 'r2', runDir: dir,
+      onEvent: e => { if (String(e.type).startsWith('agent_')) cachedEvents.push(`${e.type}:${e.status ?? ''}`); },
+    }, ({ agent, parallel }) => parallel([() => agent('x'), () => agent('y')]));
+    expect(cachedEvents.sort()).toEqual(['agent_end:cached', 'agent_end:cached']);
+  });
+
+  it('changing schema or thinkingLevel invalidates the cache', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'inception-'));
+    const rt1 = fakeRuntime(echo);
+    await runWorkflow(rt1, { runId: 'r1', runDir: dir }, async ({ agent }) => {
+      await agent('p', { schema: { kind: 'v1' } });
+      await agent('q', { thinkingLevel: 'default' });
+    });
+    const rt2 = fakeRuntime(echo);
+    await runWorkflow(rt2, { runId: 'r2', runDir: dir }, async ({ agent }) => {
+      await agent('p', { schema: { kind: 'v2' } });
+      await agent('q', { thinkingLevel: 'extended' });
+      await agent('p', { schema: { kind: 'v1' } }); // unchanged — must stay cached
+    });
+    expect(rt2.calls.map(c => c.text)).toEqual(['p', 'q']);
+  });
+
+  it('a reported $0 cost is trusted only for zero-token calls', async () => {
+    const zeroCostWithTokens = fakeRuntime(async () => ({ text: 'ok', usage: usage(1_000_000, 0, 0), model: { id: 'custom/m' } }));
+    let spent = 0;
+    await runWorkflow(zeroCostWithTokens, { runId: 'r1', pricing: { 'custom/m': [2, 4] } }, async ({ agent, budget }) => {
+      await agent('a');
+      spent = budget.spent();
+    });
+    expect(spent).toBeCloseTo(2); // unpriced-model 0 falls back to the table
+
+    const trulyFree = fakeRuntime(async () => ({ text: 'ok', usage: usage(0, 0, 0), model: { id: 'custom/m' } }));
+    let freeSpent = -1;
+    await runWorkflow(trulyFree, { runId: 'r2' }, async ({ agent, budget }) => {
+      await agent('a');
+      freeSpent = budget.spent();
+    });
+    expect(freeSpent).toBe(0);
+  });
+});
+
 describe('Limiter', () => {
   it('rejects a sub-1 cap', () => {
     expect(() => new Limiter(0)).toThrow();
+  });
+
+  it('double release neither under-counts nor over-admits', async () => {
+    const limiter = new Limiter(2);
+    const r1 = await limiter.acquire();
+    const r2 = await limiter.acquire();
+    r1();
+    r1(); // second call must be a no-op
+    const r3 = await limiter.acquire();
+    let fourthAdmitted = false;
+    const pending = limiter.acquire().then(release => { fourthAdmitted = true; return release; });
+    await new Promise(r => setTimeout(r, 5));
+    expect(fourthAdmitted).toBe(false); // capacity is still 2, not inflated by the double release
+    r2();
+    const r4 = await pending;
+    expect(fourthAdmitted).toBe(true);
+    r3(); r4();
+  });
+
+  it('hands a freed slot to the queued waiter, never to a sneaking fresh acquire', async () => {
+    const limiter = new Limiter(1);
+    const r1 = await limiter.acquire();
+    let waiterAdmitted = false;
+    const waiter = limiter.acquire().then(release => { waiterAdmitted = true; return release; });
+    r1();
+    // A fresh acquire in the same tick must queue behind the woken waiter.
+    let sneakAdmitted = false;
+    const sneak = limiter.acquire().then(release => { sneakAdmitted = true; return release; });
+    const wr = await waiter;
+    expect(waiterAdmitted).toBe(true);
+    expect(sneakAdmitted).toBe(false);
+    wr();
+    (await sneak)();
   });
 });
