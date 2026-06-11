@@ -81,6 +81,7 @@ export function watchCommand(args, usagePrefix = 'inception-watch') {
   function drain() {
     if (!existsSync(file)) return false;
     const text = readFileSync(file, 'utf8');
+    if (text.length < offset) offset = 0; // file truncated/recreated — restart from the top
     if (text.length <= offset) return false;
     const chunk = text.slice(offset);
     const end = chunk.lastIndexOf('\n');
