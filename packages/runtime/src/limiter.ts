@@ -8,19 +8,23 @@ export class Limiter {
   }
 
   async acquire(): Promise<() => void> {
-    if (this.active < this.max) {
+    if (this.active >= this.max) {
+      // The releaser hands its slot over without decrementing, so a fresh
+      // acquire() can never steal it from the woken waiter mid-tick.
+      await new Promise<void>(resolve => this.queue.push(resolve));
+    } else {
       this.active++;
-      return this.release;
     }
-    await new Promise<void>(resolve => this.queue.push(resolve));
-    this.active++;
-    return this.release;
+    // Once-guarded: a double release must not under-count the semaphore.
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.queue.shift();
+      if (next) next();
+      else this.active--;
+    };
   }
-
-  private release = (): void => {
-    this.active--;
-    this.queue.shift()?.();
-  };
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
     const release = await this.acquire();
