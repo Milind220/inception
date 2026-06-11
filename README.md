@@ -88,14 +88,16 @@ The orchestrating agent writes this, launches it in a background terminal, and r
 
 ## Status
 
-Early. Extraction of the runtime from a production production review harness is in progress. See [docs/design.md](docs/design.md) for the full design and research notes.
+Early but real. The runtime core is implemented and tested (17 passing tests); the patterns are extracted from a production production review harness. See [docs/design.md](docs/design.md) for the full design and research notes, and [examples/bug-hunt.ts](examples/bug-hunt.ts) for a complete workflow.
 
-- [ ] Runtime: `agent()/parallel()/pipeline()/phase()/budget` over `@flue/sdk`
-- [ ] Journal + resume
-- [ ] `inception init` provider detection
-- [ ] SKILL.md + template workflows
-- [ ] `inception watch` TUI
-- [ ] Recursive `workflow()` with depth caps
+- [x] Runtime: `agent()/parallel()/pipeline()/phase()/log()/budget` over `@flue/sdk` (zero runtime deps, structurally typed)
+- [x] Journal + resume (content-hash keyed; edited calls re-run, unchanged calls return cached)
+- [x] Budget hard stop (provider-reported cost, pricing-table fallback), agent cap, concurrency cap
+- [x] Recursive `workflow()` with depth caps (default 5), shared budget across levels
+- [x] `inception-watch` CLI: live tail or replay of a run's event stream
+- [ ] `inception init` provider detection / `.flue` scaffolding
+- [ ] SKILL.md finalized + template workflows
+- [ ] npm publish
 - [ ] Tested on: Claude Code · Codex CLI · OpenCode · Gemini CLI
 
 > npm note: the bare `inception` package name is taken; packages will ship as `inception-workflows` (or a scope).
