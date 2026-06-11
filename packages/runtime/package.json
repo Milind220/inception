@@ -1,0 +1,8 @@
+{
+  "name": "inception-workflows",
+  "version": "0.0.1",
+  "description": "Workflow runtime for inception: agent()/parallel()/pipeline()/budget over @flue/sdk, with journaling, resume, and a watch TUI",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.18.0" }
+}

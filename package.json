@@ -1,0 +1,9 @@
+{
+  "name": "inception-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Dynamic workflows for any coding agent — portable skill + runtime for agent-authored multi-agent orchestration",
+  "license": "MIT",
+  "engines": { "node": ">=22.18.0" },
+  "workspaces": ["packages/*"]
+}
