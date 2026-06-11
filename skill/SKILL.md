@@ -24,6 +24,7 @@ node --version          # must be >= 22.18
 git clone https://github.com/Milind220/inception ~/inception
 (cd ~/inception/packages/runtime && npm install && npm run build)
 # in your project (run `inception init` to probe API keys and scaffold src/app.ts + src/workflows/):
+[ -f package.json ] || npm init -y   # required: without one, npm installs into the nearest ancestor with a package.json (often $HOME)
 npm install @flue/runtime@^0.11 valibot && npm install -D @flue/cli@^0.11
 npm install file:~/inception/packages/runtime    # installs inception-workflows + the inception-watch bin
 ```
