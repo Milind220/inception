@@ -70,9 +70,12 @@ export function detectProviders(probes: Probes): DetectedProvider[] {
   return out;
 }
 
-export function isOnPath(bin: string, pathVar: string | undefined): boolean {
+export function isOnPath(bin: string, pathVar: string | undefined, pathExt?: string): boolean {
   if (!pathVar) return false;
-  return pathVar.split(delimiter).some(dir => dir && existsSync(join(dir, bin)));
+  // Windows resolves executables through PATHEXT (codex-bridge.exe, .cmd, ...).
+  // PATHEXT is always ';'-separated, unlike PATH which uses the platform delimiter.
+  const suffixes = ['', ...(pathExt ? pathExt.split(';').filter(Boolean) : [])];
+  return pathVar.split(delimiter).some(dir => dir && suffixes.some(ext => existsSync(join(dir, bin + ext))));
 }
 
 /**
@@ -91,7 +94,7 @@ export function codexAuthUsable(file: string): boolean {
 export function realProbes(env: Readonly<Record<string, string | undefined>> = process.env, home: string = homedir()): Probes {
   return {
     env,
-    isOnPath: bin => isOnPath(bin, env.PATH),
+    isOnPath: bin => isOnPath(bin, env.PATH, env.PATHEXT),
     hasCodexAuth: () => codexAuthUsable(join(home, '.codex', 'auth.json')),
   };
 }
